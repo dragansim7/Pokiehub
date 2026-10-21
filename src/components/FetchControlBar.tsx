@@ -9,6 +9,9 @@ interface FetchControlBarProps {
   onStopFetch: () => void;
   onRetryErrors: () => void;
   onExportCsv: () => void;
+  skipDeadDomains: boolean;
+  onToggleSkipDeadDomains: () => void;
+  deadDomainsCount: number;
   progressPct: number;
   finishedTasks: number;
   totalTasks: number;
@@ -26,6 +29,9 @@ export const FetchControlBar: React.FC<FetchControlBarProps> = ({
   onStopFetch,
   onRetryErrors,
   onExportCsv,
+  skipDeadDomains,
+  onToggleSkipDeadDomains,
+  deadDomainsCount,
   progressPct,
   finishedTasks,
   totalTasks,
@@ -95,6 +101,20 @@ export const FetchControlBar: React.FC<FetchControlBarProps> = ({
               <span>Retry {errorCount} Errors</span>
             </button>
           )}
+
+          {/* Option 1: Skip Dead Domains Toggle */}
+          <button
+            type="button"
+            onClick={onToggleSkipDeadDomains}
+            className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-md border transition-colors ${
+              skipDeadDomains
+                ? 'bg-emerald-950/40 text-emerald-300 border-emerald-800/60'
+                : 'bg-[#1A1A24] text-slate-400 border-[#2B2B3C] hover:text-slate-200'
+            }`}
+            title="Auto-skip domains flagged as dead in Domain Intelligence"
+          >
+            <span>{skipDeadDomains ? '✓ Skipping' : 'Include'} Dead ({deadDomainsCount})</span>
+          </button>
 
           {/* Export CSV button */}
           <button

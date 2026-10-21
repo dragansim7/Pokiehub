@@ -335,22 +335,53 @@ async function runConcurrentFetchJob(
   broadcastJobUpdate(jobId, { type: 'job_completed', job });
 }
 
+// Dynamic pokie domain catalog for Bonus Radar
+const dynamicRadarDomains = [...CASINO_DOMAINS];
+
 // API Routes
 app.get('/api/domains', (_req, res) => {
-  res.json({ domains: CASINO_DOMAINS });
+  const deadDomains = new Set(
+    Array.from(intelDomains.values())
+      .filter((d) => d.status === 'dead')
+      .map((d) => d.domain)
+  );
+  res.json({
+    domains: dynamicRadarDomains,
+    deadCount: deadDomains.size,
+    deadDomains: Array.from(deadDomains),
+  });
 });
 
 app.post('/api/jobs', (req, res) => {
-  const { accounts, concurrency = 4, customDomains, retryErrorsOnly = false, previousErrors = [] } = req.body;
+  const {
+    accounts,
+    concurrency = 4,
+    customDomains,
+    retryErrorsOnly = false,
+    previousErrors = [],
+    skipDeadDomains = false,
+  } = req.body;
 
   if (!Array.isArray(accounts) || accounts.length === 0) {
     return res.status(400).json({ error: 'At least one account is required to start fetching.' });
   }
 
-  const selectedDomains =
+  const deadDomains = new Set(
+    Array.from(intelDomains.values())
+      .filter((d) => d.status === 'dead')
+      .map((d) => d.domain)
+  );
+
+  let candidateDomains =
     Array.isArray(customDomains) && customDomains.length > 0
-      ? CASINO_DOMAINS.filter((d) => customDomains.includes(d.domain))
-      : CASINO_DOMAINS;
+      ? dynamicRadarDomains.filter((d) => customDomains.includes(d.domain))
+      : dynamicRadarDomains;
+
+  if (skipDeadDomains) {
+    candidateDomains = candidateDomains.filter((d) => !deadDomains.has(d.domain));
+  }
+
+  const selectedDomains = candidateDomains;
 
   const jobId = `fetch_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   const summary: FetchJobSummary = {
@@ -735,6 +766,42 @@ app.post('/api/intel/scan', (_req, res) => {
   res.json({
     message: 'Scan triggered',
     status: intelScanState,
+  });
+});
+
+app.post('/api/intel/sync-to-radar', (_req, res) => {
+  const liveOrRedirect = Array.from(intelDomains.values()).filter(
+    (r) => r.status === 'live' || r.status === 'redirect' || r.status === 'slow'
+  );
+
+  const existingDomains = new Set(dynamicRadarDomains.map((d) => d.domain));
+  const added: any[] = [];
+
+  for (const item of liveOrRedirect) {
+    const targetDomain = item.finalDomain || item.domain;
+    if (!existingDomains.has(targetDomain)) {
+      const cleanName = targetDomain
+        .replace(/\.(com|casino|bet|online|io|net)$/i, '')
+        .split('-')
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ');
+      const newDomainInfo = {
+        domain: targetDomain,
+        name: cleanName || targetDomain,
+        category: 'New' as const,
+        logoText: (cleanName || targetDomain).slice(0, 3).toUpperCase(),
+        promoPath: '/promotions',
+      };
+      dynamicRadarDomains.push(newDomainInfo);
+      existingDomains.add(targetDomain);
+      added.push(newDomainInfo);
+    }
+  }
+
+  res.json({
+    syncedCount: added.length,
+    totalRadarDomains: dynamicRadarDomains.length,
+    addedDomains: added,
   });
 });
 

@@ -110,3 +110,22 @@ export interface IntelScanSummary {
   countDead: number;
 }
 
+export interface RowDeltaInfo {
+  isNewBonus: boolean;
+  amountDelta: number;
+  cashDelta: number;
+  statusChange: 'new' | 'increased' | 'expired' | 'decreased' | 'unchanged';
+  details: string[];
+}
+
+export interface BonusDeltaSummary {
+  previousFetchAt: string | null;
+  newLitUpCount: number;
+  newLitUpValue: number;
+  increasedCount: number;
+  expiredCount: number;
+  cashDelta: number;
+  deltasByRowId: Record<string, RowDeltaInfo>;
+}
+
+

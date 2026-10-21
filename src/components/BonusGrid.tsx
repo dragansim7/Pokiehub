@@ -1,15 +1,17 @@
 import React, { useState, useMemo } from 'react';
 import { Search, ExternalLink, ChevronDown, ChevronUp, AlertTriangle, ArrowUpDown, Filter } from 'lucide-react';
-import { AccountBonusRow, BonusPromotion } from '../types/bonus.ts';
+import { AccountBonusRow, BonusDeltaSummary, BonusPromotion } from '../types/bonus.ts';
 
 interface BonusGridProps {
   rows: AccountBonusRow[];
   isFetching: boolean;
   onOpenDetails: (row: AccountBonusRow) => void;
+  diffSummary?: BonusDeltaSummary;
 }
 
 type FilterCategory =
   | 'lit-up'
+  | 'changes'
   | 'all'
   | 'signup'
   | 'commission'
@@ -30,6 +32,7 @@ export const BonusGrid: React.FC<BonusGridProps> = ({
   rows,
   isFetching,
   onOpenDetails,
+  diffSummary,
 }) => {
   const [filterCategory, setFilterCategory] = useState<FilterCategory>('lit-up');
   const [searchQuery, setSearchQuery] = useState('');
@@ -57,6 +60,9 @@ export const BonusGrid: React.FC<BonusGridProps> = ({
       case 'lit-up':
         // Strictly filter to active, lit-up bonuses > $0
         result = result.filter((r) => r.litUpBonuses && r.litUpBonuses.length > 0);
+        break;
+      case 'changes':
+        result = result.filter((r) => diffSummary?.deltasByRowId[r.id]);
         break;
       case 'signup':
         result = result.filter(
@@ -166,6 +172,13 @@ export const BonusGrid: React.FC<BonusGridProps> = ({
         <div className="flex flex-wrap items-center gap-1.5 p-1 bg-[#12131A] rounded-lg border border-[#20212C]">
           {[
             { id: 'lit-up', label: 'Lit-Up Promos (>0)' },
+            {
+              id: 'changes',
+              label:
+                Object.keys(diffSummary?.deltasByRowId || {}).length > 0
+                  ? `✨ Changes (${Object.keys(diffSummary?.deltasByRowId || {}).length})`
+                  : 'Changes',
+            },
             { id: 'all', label: 'All Scraped' },
             { id: 'signup', label: 'Signup / Match' },
             { id: 'commission', label: 'Commission' },
@@ -233,6 +246,49 @@ export const BonusGrid: React.FC<BonusGridProps> = ({
         </div>
       </div>
 
+      {/* Historical Diff Summary Banner matching Best Pokies List logic */}
+      {diffSummary &&
+        diffSummary.previousFetchAt &&
+        (diffSummary.newLitUpCount > 0 ||
+          diffSummary.increasedCount > 0 ||
+          diffSummary.expiredCount > 0 ||
+          diffSummary.cashDelta !== 0) && (
+          <div className="mb-4 p-3 bg-[#0C1518] border border-cyan-500/30 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="font-semibold text-cyan-300">
+                Diff vs Previous Scan ({new Date(diffSummary.previousFetchAt).toLocaleTimeString()}):
+              </span>
+              {diffSummary.newLitUpCount > 0 && (
+                <span className="inline-flex items-center gap-1 text-emerald-400 font-mono font-medium">
+                  <strong>+{diffSummary.newLitUpCount}</strong> New Lit-Up Bonuses (+${diffSummary.newLitUpValue.toFixed(2)})
+                </span>
+              )}
+              {diffSummary.increasedCount > 0 && (
+                <span className="inline-flex items-center gap-1 text-cyan-300 font-mono font-medium">
+                  <strong>+{diffSummary.increasedCount}</strong> Increased
+                </span>
+              )}
+              {diffSummary.expiredCount > 0 && (
+                <span className="inline-flex items-center gap-1 text-amber-400 font-mono font-medium">
+                  <strong>{diffSummary.expiredCount}</strong> Expired / Redeemed
+                </span>
+              )}
+              {diffSummary.cashDelta !== 0 && (
+                <span className="inline-flex items-center gap-1 text-slate-300 font-mono font-medium">
+                  Cash {diffSummary.cashDelta > 0 ? `+$${diffSummary.cashDelta.toFixed(2)}` : `-$${Math.abs(diffSummary.cashDelta).toFixed(2)}`}
+                </span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setFilterCategory('changes')}
+              className="text-xs text-cyan-400 hover:text-cyan-300 underline whitespace-nowrap"
+            >
+              Filter Changes Only →
+            </button>
+          </div>
+        )}
+
       {/* Results Count Banner */}
       <div className="flex items-center justify-between text-xs text-slate-400 pb-3">
         <span>
@@ -284,6 +340,29 @@ export const BonusGrid: React.FC<BonusGridProps> = ({
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-white text-sm">{row.casinoName}</span>
                         <span className="text-xs text-slate-400 font-mono">({row.domain})</span>
+                        {diffSummary?.deltasByRowId[row.id] && (
+                          <span
+                            className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
+                              diffSummary.deltasByRowId[row.id].isNewBonus
+                                ? 'bg-emerald-950/60 text-emerald-300 border-emerald-700/60'
+                                : diffSummary.deltasByRowId[row.id].amountDelta > 0
+                                ? 'bg-cyan-950/60 text-cyan-300 border-cyan-700/60'
+                                : diffSummary.deltasByRowId[row.id].statusChange === 'expired'
+                                ? 'bg-amber-950/60 text-amber-300 border-amber-700/60'
+                                : 'bg-[#1A1A24] text-slate-300 border-[#2B2B3C]'
+                            }`}
+                          >
+                            {diffSummary.deltasByRowId[row.id].isNewBonus
+                              ? `● New Promo (+ $${row.totalLitUpAmount.toFixed(2)})`
+                              : diffSummary.deltasByRowId[row.id].amountDelta > 0
+                              ? `▲ +$${diffSummary.deltasByRowId[row.id].amountDelta.toFixed(2)}`
+                              : diffSummary.deltasByRowId[row.id].statusChange === 'expired'
+                              ? '▼ Expired'
+                              : diffSummary.deltasByRowId[row.id].cashDelta !== 0
+                              ? `Cash ${diffSummary.deltasByRowId[row.id].cashDelta > 0 ? '+' : ''}$${diffSummary.deltasByRowId[row.id].cashDelta.toFixed(2)}`
+                              : ''}
+                          </span>
+                        )}
                       </div>
                       <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
                         <span className="font-mono text-slate-300">{row.accountPhone}</span>

@@ -8,6 +8,7 @@ import { DomainsCatalogModal } from './components/DomainsCatalogModal.tsx';
 import { DomainIntelView } from './components/DomainIntelView.tsx';
 import { useAccountVault } from './hooks/useAccountVault.ts';
 import { AccountBonusRow, FetchJobSummary } from './types/bonus.ts';
+import { loadPreviousSnapshot, saveCurrentSnapshot, computeBonusDelta } from './utils/diffTracker.ts';
 
 export default function App() {
   const [activeView, setActiveView] = useState<'radar' | 'intel'>('radar');
@@ -27,6 +28,11 @@ export default function App() {
   const [isDomainsOpen, setIsDomainsOpen] = useState(false);
   const [selectedRowForDetails, setSelectedRowForDetails] = useState<AccountBonusRow | null>(null);
 
+  // Option 1 & 2 states
+  const [skipDeadDomains, setSkipDeadDomains] = useState(true);
+  const [deadDomainsCount, setDeadDomainsCount] = useState(0);
+  const [previousSnapshot, setPreviousSnapshot] = useState(() => loadPreviousSnapshot());
+
   // Fetching state
   const [concurrency, setConcurrency] = useState(4);
   const [isFetching, setIsFetching] = useState(false);
@@ -45,6 +51,27 @@ export default function App() {
   const timerRef = useRef<any>(null);
 
   const enabledAccounts = useMemo(() => accounts.filter((a) => a.enabled), [accounts]);
+
+  // Compute live diff vs previous run
+  const diffSummary = useMemo(
+    () => computeBonusDelta(scrapedRows, previousSnapshot),
+    [scrapedRows, previousSnapshot]
+  );
+
+  // Fetch dead domains count from backend
+  const refreshDomainMetadata = async () => {
+    try {
+      const res = await fetch('/api/domains');
+      if (res.ok) {
+        const data = await res.json();
+        setDeadDomainsCount(data.deadCount || 0);
+      }
+    } catch {}
+  };
+
+  useEffect(() => {
+    refreshDomainMetadata();
+  }, [activeView]);
 
   // Elapsed timer handling
   useEffect(() => {
@@ -100,6 +127,7 @@ export default function App() {
           concurrency,
           retryErrorsOnly,
           previousErrors: retryErrorsOnly ? scrapedErrors : [],
+          skipDeadDomains,
         }),
       });
 
@@ -151,7 +179,11 @@ export default function App() {
             setIsFetching(false);
             setActiveWorkers(0);
             if (payload.job) {
-              if (payload.job.results) setScrapedRows(payload.job.results);
+              if (payload.job.results) {
+                setScrapedRows(payload.job.results);
+                saveCurrentSnapshot(payload.job.results);
+                setPreviousSnapshot(loadPreviousSnapshot());
+              }
               if (payload.job.errors) setScrapedErrors(payload.job.errors);
               setProgressPct(100);
               setFinishedTasks(payload.job.finished);
@@ -183,7 +215,13 @@ export default function App() {
       setFinishedTasks(job.finished);
       setTotalTasks(job.total);
       setActiveWorkers(job.activeWorkers);
-      if (job.results) setScrapedRows(job.results);
+      if (job.results) {
+        setScrapedRows(job.results);
+        if (job.state === 'completed') {
+          saveCurrentSnapshot(job.results);
+          setPreviousSnapshot(loadPreviousSnapshot());
+        }
+      }
       if (job.errors) setScrapedErrors(job.errors);
 
       if (job.state === 'completed' || job.state === 'cancelled') {
@@ -329,6 +367,9 @@ export default function App() {
             onStopFetch={handleStopFetch}
             onRetryErrors={() => handleStartFetch(true)}
             onExportCsv={handleExportActiveCsv}
+            skipDeadDomains={skipDeadDomains}
+            onToggleSkipDeadDomains={() => setSkipDeadDomains((p) => !p)}
+            deadDomainsCount={deadDomainsCount}
             progressPct={progressPct}
             finishedTasks={finishedTasks}
             totalTasks={totalTasks}
@@ -344,6 +385,7 @@ export default function App() {
               rows={allRowsCombined}
               isFetching={isFetching}
               onOpenDetails={(row) => setSelectedRowForDetails(row)}
+              diffSummary={diffSummary}
             />
           </main>
         </>

@@ -230,6 +230,20 @@ export const DomainIntelView: React.FC = () => {
     }
   };
 
+  // Sync live domains to Bonus Radar
+  const handleSyncToRadar = async () => {
+    try {
+      const res = await fetch('/api/intel/sync-to-radar', { method: 'POST' });
+      const data = await res.json();
+      setMessage({
+        text: `Synced ${data.syncedCount} new verified domain(s) to Bonus Radar! Total radar targets: ${data.totalRadarDomains}`,
+        type: 'ok',
+      });
+    } catch (e: any) {
+      setMessage({ text: `Sync failed: ${e.message}`, type: 'error' });
+    }
+  };
+
   // Export CSV
   const handleExportCsv = () => {
     const headers = ['Domain', 'Status', 'ResponseMs', 'HttpStatus', 'FinalDomain', 'HtmlSizeKB', 'Reason', 'LastChecked'];
@@ -354,6 +368,15 @@ export const DomainIntelView: React.FC = () => {
           >
             <Upload className="w-3.5 h-3.5 text-cyan-400" />
             <span>Import / Add URLs</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleSyncToRadar}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-300 bg-emerald-950/40 hover:bg-emerald-900/50 border border-emerald-800/60 rounded-md transition-colors"
+            title="Push verified live domains into the active Bonus Radar scanning pool"
+          >
+            <span>Sync Live to Radar</span>
           </button>
 
           <button
