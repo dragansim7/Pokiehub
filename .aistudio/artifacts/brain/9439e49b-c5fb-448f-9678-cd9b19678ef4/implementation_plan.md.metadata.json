@@ -1,0 +1,6 @@
+{
+  "summary":  "Revised implementation plan removing all automated bonus claiming. Focused strictly on concurrent fetching and scraping of current available, lit-up, non-greyed-out bonuses (>0) from account promotions sections, with turnover calculation, account vault, and direct casino links.",
+  "updatedAt":  "2026-10-21T04:44:36.375008124Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}
