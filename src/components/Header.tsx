@@ -38,43 +38,39 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           </div>
 
-          {/* Zone 2: Nav Links */}
-          <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-400">
-            <button
-              type="button"
-              onClick={() => onSelectView('radar')}
-              className={`transition-colors whitespace-nowrap ${
-                activeView === 'radar'
-                  ? 'text-white border-b-2 border-cyan-400 pb-0.5'
-                  : 'hover:text-slate-200'
-              }`}
-            >
-              Bonus Radar
-            </button>
-            <button
-              type="button"
-              onClick={() => onSelectView('intel')}
-              className={`transition-colors whitespace-nowrap ${
-                activeView === 'intel'
-                  ? 'text-white border-b-2 border-cyan-400 pb-0.5'
-                  : 'hover:text-slate-200'
-              }`}
-            >
-              Domain Intelligence &amp; Prober
-            </button>
-            <button
-              type="button"
-              onClick={onOpenVault}
-              className="hover:text-slate-200 transition-colors whitespace-nowrap text-left"
-            >
-              Account Vault ({activeAccountsCount})
-            </button>
+          {/* Zone 2: Nav Tabs (Always accessible on all screen sizes) */}
+          <nav className="flex items-center gap-2 text-xs sm:text-sm font-medium text-slate-400">
+            <div className="flex items-center p-1 bg-[#151620] border border-[#232435] rounded-lg">
+              <button
+                type="button"
+                onClick={() => onSelectView('radar')}
+                className={`px-3 py-1 rounded-md transition-colors whitespace-nowrap font-medium ${
+                  activeView === 'radar'
+                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Bonus Radar
+              </button>
+              <button
+                type="button"
+                onClick={() => onSelectView('intel')}
+                className={`px-3 py-1 rounded-md transition-colors whitespace-nowrap font-medium flex items-center gap-1.5 ${
+                  activeView === 'intel'
+                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <span>Domain Intel &amp; Prober</span>
+                <span className="hidden sm:inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              </button>
+            </div>
             <button
               type="button"
               onClick={onOpenDomains}
-              className="hover:text-slate-200 transition-colors whitespace-nowrap text-left"
+              className="hidden lg:inline-flex hover:text-slate-200 transition-colors whitespace-nowrap text-left px-2 py-1 text-xs text-slate-400"
             >
-              Supported Pokies (22)
+              Pokies Catalog (22)
             </button>
           </nav>
 

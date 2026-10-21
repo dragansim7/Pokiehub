@@ -227,6 +227,262 @@ async function scrapeAccountDomain(
   };
 }
 
+// Real direct HTTP API login & promotion scraper
+async function scrapeRealAccountDomain(
+  account: AccountCredential,
+  domainInfo: { domain: string; name: string; promoPath: string },
+  attemptIndex = 0
+): Promise<AccountBonusRow> {
+  const currentCred = attemptIndex === 0 ? account : account.fallbacks[attemptIndex - 1] || account;
+  const phone = currentCred.phone;
+  const password = currentCred.password;
+  const sessionToken = currentCred.sessionToken || account.sessionToken;
+
+  const domain = domainInfo.domain;
+  const targetUrl = `https://${domain}`;
+
+  // Authentic browser request headers
+  const commonHeaders: Record<string, string> = {
+    'User-Agent':
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Accept': 'application/json, text/plain, */*',
+    'Accept-Language': 'en-AU,en-US;q=0.9,en;q=0.8',
+    'Origin': targetUrl,
+    'Referer': `${targetUrl}/`,
+  };
+
+  if (sessionToken) {
+    if (sessionToken.startsWith('Bearer ')) {
+      commonHeaders['Authorization'] = sessionToken;
+    } else {
+      commonHeaders['Cookie'] = sessionToken.includes('=')
+        ? sessionToken
+        : `_session_id=${sessionToken}; auth_token=${sessionToken}`;
+    }
+  }
+
+  let authCookie = sessionToken || '';
+  let authError: { type: string; reason: string; code: number } | null = null;
+  let loggedIn = Boolean(sessionToken);
+
+  // If no session token provided, attempt direct HTTP API authentication
+  if (!sessionToken) {
+    const loginEndpoints = [
+      `/api/users/sign_in`,
+      `/auth/login`,
+      `/api/auth/login`,
+      `/api/v1/auth/login`,
+      `/api/auth/sign-in`,
+    ];
+
+    for (const endpoint of loginEndpoints) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 6500);
+
+        const res = await fetch(`${targetUrl}${endpoint}`, {
+          method: 'POST',
+          headers: {
+            ...commonHeaders,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            user: { login: phone, password },
+            email: phone,
+            phone: phone,
+            password: password,
+          }),
+          signal: controller.signal,
+          redirect: 'manual',
+        });
+
+        clearTimeout(timeout);
+
+        // Check for Cloudflare Turnstile / Bot challenge
+        if (res.status === 403 || res.status === 503) {
+          const bodyText = await res.text().catch(() => '');
+          if (
+            bodyText.includes('cf-ray') ||
+            bodyText.includes('Cloudflare') ||
+            bodyText.includes('turnstile') ||
+            bodyText.includes('challenge') ||
+            res.headers.get('cf-ray')
+          ) {
+            authError = {
+              type: 'cloudflare_challenge',
+              reason: 'Cloudflare Turnstile challenge encountered on login. Paste active session cookie in Vault to bypass.',
+              code: res.status,
+            };
+            break;
+          }
+        }
+
+        // Check for invalid credentials
+        if (res.status === 401 || res.status === 422) {
+          authError = {
+            type: 'auth_failed',
+            reason: 'Invalid credentials or session expired (HTTP 401). Check phone & password.',
+            code: res.status,
+          };
+          break;
+        }
+
+        // Check if login succeeded and returned session cookies
+        const setCookie = res.headers.get('set-cookie');
+        if (setCookie) {
+          authCookie = setCookie;
+        }
+
+        if (res.ok) {
+          loggedIn = true;
+          const json = await res.json().catch(() => null);
+          if (json?.token || json?.auth_token || json?.user?.token) {
+            commonHeaders['Authorization'] = `Bearer ${json.token || json.auth_token || json.user?.token}`;
+          }
+          break;
+        }
+      } catch (err: any) {
+        if (err?.name === 'AbortError') {
+          authError = {
+            type: 'timeout',
+            reason: 'Connection timed out (>6.5s) trying to reach casino API.',
+            code: 504,
+          };
+        }
+      }
+    }
+
+    if (!loggedIn && authError) {
+      // Fallback chain retry if secondary credential exists
+      if (account.fallbacks && account.fallbacks.length > attemptIndex && attemptIndex === 0) {
+        return scrapeRealAccountDomain(account, domainInfo, attemptIndex + 1);
+      }
+      return {
+        id: `${account.id}-${domainInfo.domain}`,
+        accountId: account.id,
+        accountPhone: phone,
+        accountLabel: account.label,
+        domain: domainInfo.domain,
+        casinoName: domainInfo.name,
+        casinoIdentity: String(Math.floor(100000 + Math.random() * 900000)),
+        cash: 0,
+        cashMinWithdrawal: 0,
+        cashMaxWithdrawal: 0,
+        availableBonuses: [],
+        litUpBonuses: [],
+        totalLitUpAmount: 0,
+        bestTurnoverRatio: 0,
+        fetchState: 'error',
+        errorType: authError.type,
+        errorReason: authError.reason,
+        httpCode: authError.code,
+        fetchedAt: new Date().toISOString(),
+        usedFallbackIndex: attemptIndex,
+      };
+    }
+  }
+
+  // Once authenticated (or using session token), fetch live user profile, wallet, and bonuses
+  let liveCash = 0;
+  let liveMinWith = 0;
+  let liveMaxWith = 0;
+  const litUpBonuses: BonusPromotion[] = [];
+  const allPromos: BonusPromotion[] = [];
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6500);
+
+    const balanceUrl = `${targetUrl}/api/users/me`;
+    const promoUrl = `${targetUrl}/api/promotions`;
+
+    const reqHeaders = { ...commonHeaders };
+    if (authCookie && !reqHeaders['Cookie']) {
+      reqHeaders['Cookie'] = authCookie;
+    }
+
+    const [balanceRes, promoRes] = await Promise.allSettled([
+      fetch(balanceUrl, { headers: reqHeaders, signal: controller.signal }),
+      fetch(promoUrl, { headers: reqHeaders, signal: controller.signal }),
+    ]);
+
+    clearTimeout(timeout);
+
+    if (balanceRes.status === 'fulfilled' && balanceRes.value.ok) {
+      const data = await balanceRes.value.json().catch(() => null);
+      if (data) {
+        liveCash = Number(data.balance || data.wallet?.balance || data.cash || data.user?.balance || 0);
+        liveMinWith = liveCash > 0 ? 20 : 0;
+        liveMaxWith = liveCash > 0 ? 5000 : 0;
+      }
+    }
+
+    if (promoRes.status === 'fulfilled' && promoRes.value.ok) {
+      const pData = await promoRes.value.json().catch(() => null);
+      const rawPromos = Array.isArray(pData)
+        ? pData
+        : Array.isArray(pData?.promotions)
+        ? pData.promotions
+        : Array.isArray(pData?.bonuses)
+        ? pData.bonuses
+        : [];
+
+      for (let i = 0; i < rawPromos.length; i++) {
+        const p = rawPromos[i];
+        const rawAmount = Number(p.amount || p.bonus_amount || p.value || 0);
+        const isAvailable = Boolean(p.active || p.available || p.isLitUp || p.status === 'active');
+        const minWith = Number(p.minWithdrawal || p.min_cashout || 30);
+        const turnover = rawAmount > 0 ? Number((minWith / rawAmount).toFixed(2)) : 0;
+
+        const promo: BonusPromotion = {
+          id: `${domain}-${p.type || 'promo'}-${i}`,
+          type: (p.type || 'promotion') as any,
+          label: p.title || p.name || p.label || 'Casino Promotion',
+          amount: rawAmount,
+          minWithdrawal: minWith,
+          maxWithdrawal: Number(p.maxWithdrawal || minWith * 5),
+          turnover,
+          isLitUp: isAvailable && rawAmount > 0,
+          status: isAvailable ? 'active' : 'greyed_out',
+          termsNote: `Turnover ratio ${turnover}x`,
+          directPromoUrl: `${targetUrl}${domainInfo.promoPath}`,
+        };
+
+        allPromos.push(promo);
+        if (isAvailable && rawAmount > 0) {
+          litUpBonuses.push(promo);
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn(`[Live Fetch] Domain query exception for ${domain}:`, err?.message);
+  }
+
+  const totalLitUpAmount = litUpBonuses.reduce((acc, b) => acc + b.amount, 0);
+  const bestTurnoverRatio =
+    litUpBonuses.length > 0 ? Math.min(...litUpBonuses.map((b) => b.turnover)) : 0;
+
+  return {
+    id: `${account.id}-${domainInfo.domain}`,
+    accountId: account.id,
+    accountPhone: phone,
+    accountLabel: account.label,
+    domain: domainInfo.domain,
+    casinoName: domainInfo.name,
+    casinoIdentity: String(Math.floor(100000 + Math.random() * 900000)),
+    cash: liveCash,
+    cashMinWithdrawal: liveMinWith,
+    cashMaxWithdrawal: liveMaxWith,
+    availableBonuses: allPromos,
+    litUpBonuses,
+    totalLitUpAmount,
+    bestTurnoverRatio,
+    fetchState: litUpBonuses.length > 0 ? 'success' : 'empty',
+    fetchedAt: new Date().toISOString(),
+    usedFallbackIndex: attemptIndex,
+  };
+}
+
 // Background worker queue execution
 async function runConcurrentFetchJob(
   jobId: string,
@@ -234,12 +490,14 @@ async function runConcurrentFetchJob(
   concurrency: number,
   domains: { domain: string; name: string; promoPath: string }[],
   retryErrorsOnly = false,
-  previousErrors: AccountBonusRow[] = []
+  previousErrors: AccountBonusRow[] = [],
+  fetchMode: 'live' | 'simulated' = 'live'
 ) {
   const job = jobs.get(jobId);
   if (!job) return;
 
   job.state = 'running';
+  job.fetchMode = fetchMode;
   broadcastJobUpdate(jobId, { type: 'job_started', job });
 
   // Prepare work items: list of [Account, Domain] pairs
@@ -277,7 +535,10 @@ async function runConcurrentFetchJob(
       job.activeWorkers = activeWorkers;
 
       try {
-        const result = await scrapeAccountDomain(currentItem.account, currentItem.domainInfo);
+        const result =
+          fetchMode === 'live'
+            ? await scrapeRealAccountDomain(currentItem.account, currentItem.domainInfo)
+            : await scrapeAccountDomain(currentItem.account, currentItem.domainInfo);
         job.finished++;
         job.progressPct = Math.round((job.finished / Math.max(job.total, 1)) * 100);
 
@@ -360,6 +621,7 @@ app.post('/api/jobs', (req, res) => {
     retryErrorsOnly = false,
     previousErrors = [],
     skipDeadDomains = false,
+    fetchMode = 'live',
   } = req.body;
 
   if (!Array.isArray(accounts) || accounts.length === 0) {
@@ -386,8 +648,9 @@ app.post('/api/jobs', (req, res) => {
   const jobId = `fetch_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   const summary: FetchJobSummary = {
     jobId,
+    fetchMode: fetchMode === 'simulated' ? 'simulated' : 'live',
     state: 'queued',
-    total: accounts.filter((a) => a.enabled).length * selectedDomains.length,
+    total: accounts.filter((a: any) => a.enabled).length * selectedDomains.length,
     finished: 0,
     activeWorkers: 0,
     progressPct: 0,
@@ -410,7 +673,8 @@ app.post('/api/jobs', (req, res) => {
     Number(concurrency),
     selectedDomains,
     Boolean(retryErrorsOnly),
-    previousErrors
+    previousErrors,
+    fetchMode === 'simulated' ? 'simulated' : 'live'
   );
 
   res.json({
@@ -418,6 +682,7 @@ app.post('/api/jobs', (req, res) => {
     totalExpected: summary.total,
     concurrency,
     state: summary.state,
+    fetchMode: summary.fetchMode,
   });
 });
 

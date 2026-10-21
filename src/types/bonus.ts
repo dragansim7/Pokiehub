@@ -16,6 +16,7 @@ export interface BonusPromotion {
 export interface FallbackCredential {
   phone: string;
   password: string;
+  sessionToken?: string;
 }
 
 export interface AccountCredential {
@@ -23,6 +24,7 @@ export interface AccountCredential {
   label: string;
   phone: string;
   password: string;
+  sessionToken?: string; // Optional session token / cookie override to bypass Turnstile
   fallbacks: FallbackCredential[];
   enabled: boolean;
   tags?: string[];
@@ -69,6 +71,7 @@ export interface AccountBonusRow {
 
 export interface FetchJobSummary {
   jobId: string;
+  fetchMode?: 'live' | 'simulated';
   state: 'queued' | 'running' | 'completed' | 'cancelled' | 'error';
   total: number;
   finished: number;

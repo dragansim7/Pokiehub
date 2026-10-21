@@ -123,12 +123,14 @@ export function useAccountVault() {
       if (parts[4] && parts[5]) fallbacks.push({ phone: parts[4], password: parts[5] });
 
       const label = parts[6] || `Imported ${phone.slice(-4)}`;
+      const sessionToken = parts[9] || undefined;
 
       newAccounts.push({
         id: `acc_csv_${Date.now()}_${i}`,
         label,
         phone,
         password,
+        sessionToken,
         fallbacks,
         enabled: true,
         tags: ['CSV Import'],
@@ -144,7 +146,7 @@ export function useAccountVault() {
   };
 
   const exportToCsv = () => {
-    const headers = ['Phone', 'Password', 'FallbackPhone2', 'FallbackPassword2', 'FallbackPhone3', 'FallbackPassword3', 'Label', 'Tags', 'Enabled'];
+    const headers = ['Phone', 'Password', 'FallbackPhone2', 'FallbackPassword2', 'FallbackPhone3', 'FallbackPassword3', 'Label', 'Tags', 'Enabled', 'SessionToken'];
     const rows = accounts.map((acc) => [
       acc.phone,
       acc.password,
@@ -155,6 +157,7 @@ export function useAccountVault() {
       acc.label,
       (acc.tags || []).join(';'),
       acc.enabled ? 'true' : 'false',
+      acc.sessionToken || '',
     ]);
     const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });

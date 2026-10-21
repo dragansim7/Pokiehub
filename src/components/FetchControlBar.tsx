@@ -3,6 +3,8 @@ import { Play, Square, RefreshCw, Download, Zap, AlertCircle } from 'lucide-reac
 
 interface FetchControlBarProps {
   isFetching: boolean;
+  fetchMode: 'live' | 'simulated';
+  onFetchModeChange: (mode: 'live' | 'simulated') => void;
   concurrency: number;
   onConcurrencyChange: (value: number) => void;
   onStartFetch: () => void;
@@ -12,6 +14,7 @@ interface FetchControlBarProps {
   skipDeadDomains: boolean;
   onToggleSkipDeadDomains: () => void;
   deadDomainsCount: number;
+  onOpenIntel?: () => void;
   progressPct: number;
   finishedTasks: number;
   totalTasks: number;
@@ -23,6 +26,8 @@ interface FetchControlBarProps {
 
 export const FetchControlBar: React.FC<FetchControlBarProps> = ({
   isFetching,
+  fetchMode,
+  onFetchModeChange,
   concurrency,
   onConcurrencyChange,
   onStartFetch,
@@ -32,6 +37,7 @@ export const FetchControlBar: React.FC<FetchControlBarProps> = ({
   skipDeadDomains,
   onToggleSkipDeadDomains,
   deadDomainsCount,
+  onOpenIntel,
   progressPct,
   finishedTasks,
   totalTasks,
@@ -45,6 +51,37 @@ export const FetchControlBar: React.FC<FetchControlBarProps> = ({
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
         {/* Controls zone */}
         <div className="flex flex-wrap items-center gap-3">
+          {/* Mode Switcher: Live API vs Simulation */}
+          <div className="flex items-center p-0.5 bg-[#0C0D12] border border-[#232533] rounded-md text-xs">
+            <button
+              type="button"
+              disabled={isFetching}
+              onClick={() => onFetchModeChange('live')}
+              className={`px-2.5 py-1 rounded text-xs font-semibold transition-colors flex items-center gap-1.5 ${
+                fetchMode === 'live'
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Real outbound HTTP requests with direct casino credentials"
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${fetchMode === 'live' ? 'bg-emerald-400' : 'bg-slate-600'}`} />
+              <span>Live HTTP Mode</span>
+            </button>
+            <button
+              type="button"
+              disabled={isFetching}
+              onClick={() => onFetchModeChange('simulated')}
+              className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                fetchMode === 'simulated'
+                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Deterministic testing sandbox for offline development"
+            >
+              <span>Sandbox Demo</span>
+            </button>
+          </div>
+
           {/* Concurrency Selector */}
           <div className="flex items-center gap-1.5 bg-[#0C0D12] border border-[#232533] rounded-md px-2.5 py-1 text-xs">
             <Zap className="w-3.5 h-3.5 text-cyan-400" />
@@ -74,10 +111,16 @@ export const FetchControlBar: React.FC<FetchControlBarProps> = ({
               type="button"
               onClick={onStartFetch}
               disabled={enabledAccountsCount === 0}
-              className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-black bg-cyan-400 hover:bg-cyan-300 disabled:opacity-50 disabled:pointer-events-none rounded-md transition-all shadow-sm"
+              className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-md transition-all shadow-sm ${
+                fetchMode === 'live'
+                  ? 'text-black bg-emerald-400 hover:bg-emerald-300'
+                  : 'text-black bg-cyan-400 hover:bg-cyan-300'
+              } disabled:opacity-50 disabled:pointer-events-none`}
             >
               <Play className="w-3.5 h-3.5 fill-current" />
-              <span>Start Concurrent Fetch ({enabledAccountsCount} accounts)</span>
+              <span>
+                {fetchMode === 'live' ? 'Fetch Real Accounts' : 'Start Simulation'} ({enabledAccountsCount})
+              </span>
             </button>
           ) : (
             <button
@@ -115,6 +158,18 @@ export const FetchControlBar: React.FC<FetchControlBarProps> = ({
           >
             <span>{skipDeadDomains ? '✓ Skipping' : 'Include'} Dead ({deadDomainsCount})</span>
           </button>
+
+          {/* Direct jump to Domain Intelligence */}
+          {onOpenIntel && (
+            <button
+              type="button"
+              onClick={onOpenIntel}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-300 bg-[#1A1A24] hover:bg-[#252533] border border-[#2B2B3C] rounded-md transition-colors"
+              title="Open Domain Intelligence & Live URL Prober"
+            >
+              <span>Domain Intel &amp; Prober →</span>
+            </button>
+          )}
 
           {/* Export CSV button */}
           <button

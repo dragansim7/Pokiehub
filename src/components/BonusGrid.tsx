@@ -438,11 +438,36 @@ export const BonusGrid: React.FC<BonusGridProps> = ({
 
                 {/* Error Banner if failed */}
                 {row.fetchState === 'error' && (
-                  <div className="px-4 py-2.5 bg-rose-950/20 border-t border-rose-900/30 flex items-center gap-2 text-xs text-rose-300">
-                    <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-                    <span>
-                      {row.errorType?.toUpperCase()}: {row.errorReason || 'Authentication or scraping error.'}
-                    </span>
+                  <div
+                    className={`px-4 py-3 border-t flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs ${
+                      row.errorType === 'cloudflare_challenge'
+                        ? 'bg-amber-950/25 border-amber-800/40 text-amber-200'
+                        : 'bg-rose-950/20 border-rose-900/30 text-rose-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle
+                        className={`w-4 h-4 shrink-0 ${
+                          row.errorType === 'cloudflare_challenge' ? 'text-amber-400' : 'text-rose-400'
+                        }`}
+                      />
+                      <div>
+                        <span className="font-semibold uppercase tracking-wider text-[11px] mr-1.5">
+                          {row.errorType === 'cloudflare_challenge' ? 'Cloudflare Turnstile' : row.errorType?.toUpperCase()}
+                        </span>
+                        <span>{row.errorReason || 'Authentication or scraping error.'}</span>
+                      </div>
+                    </div>
+
+                    <a
+                      href={`https://${row.domain}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-xs font-medium text-cyan-300 hover:text-cyan-200 underline whitespace-nowrap self-start sm:self-auto"
+                    >
+                      <span>Open {row.casinoName} Login</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
                   </div>
                 )}
 

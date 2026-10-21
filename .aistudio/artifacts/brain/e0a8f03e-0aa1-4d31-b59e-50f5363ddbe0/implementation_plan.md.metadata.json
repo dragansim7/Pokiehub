@@ -1,0 +1,6 @@
+{
+  "summary":  "Implementation plan for transitioning from simulated fetcher to real Direct HTTP API casino authentication and scraping using phone and password credentials, with automated Cloudflare Turnstile and session expiration detection, session token override support, and a Live Mode vs Simulation Mode toggle.",
+  "updatedAt":  "2026-10-21T06:03:00.672206082Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

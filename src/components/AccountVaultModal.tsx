@@ -35,6 +35,7 @@ export const AccountVaultModal: React.FC<AccountVaultModalProps> = ({
   const [formPhone, setFormPhone] = useState('');
   const [formPassword, setFormPassword] = useState('');
   const [formLabel, setFormLabel] = useState('');
+  const [formSessionToken, setFormSessionToken] = useState('');
   const [formFallback2Phone, setFormFallback2Phone] = useState('');
   const [formFallback2Password, setFormFallback2Password] = useState('');
   const [formFallback3Phone, setFormFallback3Phone] = useState('');
@@ -62,6 +63,7 @@ export const AccountVaultModal: React.FC<AccountVaultModalProps> = ({
       phone: formPhone.trim(),
       password: formPassword,
       label: formLabel.trim() || `Account ${formPhone.slice(-4)}`,
+      sessionToken: formSessionToken.trim() || undefined,
       fallbacks,
       enabled: true,
       tags: ['Manual'],
@@ -72,6 +74,7 @@ export const AccountVaultModal: React.FC<AccountVaultModalProps> = ({
     setFormPhone('');
     setFormPassword('');
     setFormLabel('');
+    setFormSessionToken('');
     setFormFallback2Phone('');
     setFormFallback2Password('');
     setFormFallback3Phone('');
@@ -269,6 +272,11 @@ export const AccountVaultModal: React.FC<AccountVaultModalProps> = ({
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-white text-sm">{acc.label}</span>
                         <span className="text-xs text-cyan-400 font-mono">{acc.phone}</span>
+                        {acc.sessionToken && (
+                          <span className="text-[11px] text-emerald-400 font-mono">
+                            ● Token Active
+                          </span>
+                        )}
                       </div>
 
                       {acc.fallbacks && acc.fallbacks.length > 0 && (
@@ -365,6 +373,22 @@ export const AccountVaultModal: React.FC<AccountVaultModalProps> = ({
                   placeholder="Password"
                   className="w-full px-3 py-2 bg-[#0C0D12] border border-[#232536] rounded-md text-xs text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-cyan-400"
                 />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  Session Token / Cookie Override (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={formSessionToken}
+                  onChange={(e) => setFormSessionToken(e.target.value)}
+                  placeholder="e.g. _session_id=... or Bearer token (optional override for Turnstile-protected domains)"
+                  className="w-full px-3 py-2 bg-[#0C0D12] border border-[#232536] rounded-md text-xs text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-cyan-400 font-mono"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Leave empty for automatic direct HTTP login with your phone number and password.
+                </p>
               </div>
             </div>
 

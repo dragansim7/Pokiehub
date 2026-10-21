@@ -34,6 +34,7 @@ export default function App() {
   const [previousSnapshot, setPreviousSnapshot] = useState(() => loadPreviousSnapshot());
 
   // Fetching state
+  const [fetchMode, setFetchMode] = useState<'live' | 'simulated'>('live');
   const [concurrency, setConcurrency] = useState(4);
   const [isFetching, setIsFetching] = useState(false);
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
@@ -128,6 +129,7 @@ export default function App() {
           retryErrorsOnly,
           previousErrors: retryErrorsOnly ? scrapedErrors : [],
           skipDeadDomains,
+          fetchMode,
         }),
       });
 
@@ -361,6 +363,8 @@ export default function App() {
           {/* Concurrent Fetch Controls & Progress Bar */}
           <FetchControlBar
             isFetching={isFetching}
+            fetchMode={fetchMode}
+            onFetchModeChange={setFetchMode}
             concurrency={concurrency}
             onConcurrencyChange={setConcurrency}
             onStartFetch={() => handleStartFetch(false)}
@@ -370,6 +374,7 @@ export default function App() {
             skipDeadDomains={skipDeadDomains}
             onToggleSkipDeadDomains={() => setSkipDeadDomains((p) => !p)}
             deadDomainsCount={deadDomainsCount}
+            onOpenIntel={() => setActiveView('intel')}
             progressPct={progressPct}
             finishedTasks={finishedTasks}
             totalTasks={totalTasks}
