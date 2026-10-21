@@ -3,14 +3,20 @@ import http from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { CASINO_DOMAINS } from './src/data/casinoDomains.ts';
-import { AccountBonusRow, AccountCredential, BonusPromotion, FetchJobSummary } from './src/types/bonus.ts';
+import { AccountBonusRow, AccountCredential, BonusPromotion, FetchJobSummary, DomainIntelRecord, IntelScanSummary } from './src/types/bonus.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 const server = http.createServer(app);
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+
+// Always default to 3000 for AI Studio environment (process.env.PORT is 8080 for Nginx in Cloud Run)
+let PORT = 3000;
+const portArgIndex = process.argv.indexOf('--port');
+if (portArgIndex !== -1 && process.argv[portArgIndex + 1]) {
+  PORT = parseInt(process.argv[portArgIndex + 1], 10);
+}
 
 app.use(express.json({ limit: '10mb' }));
 
@@ -441,6 +447,309 @@ app.post('/api/verify-credential', async (req, res) => {
     phone,
     status: isValid ? 'Authenticated' : 'Invalid login credentials',
   });
+});
+
+// ==========================================
+// Domain Intelligence & Live URL Prober Engine
+// Matching logic from intel.bestpokieslist.online
+// ==========================================
+
+const intelDomains = new Map<string, DomainIntelRecord>();
+
+// Prepopulate from catalog
+for (const d of CASINO_DOMAINS) {
+  intelDomains.set(d.domain, {
+    id: d.domain,
+    domain: d.domain,
+    status: 'live',
+    httpStatus: 200,
+    responseMs: 120,
+    finalDomain: d.domain,
+    htmlSize: 42000,
+    checkedAt: new Date(Date.now() - 3600000).toISOString(),
+    reason: 'Initial Pokies catalog domain',
+    merchantId: '',
+  });
+}
+
+const intelScanState: IntelScanSummary = {
+  running: false,
+  total: intelDomains.size,
+  processed: intelDomains.size,
+  finishedAt: new Date().toISOString(),
+  countLive: intelDomains.size,
+  countRedirect: 0,
+  countSlow: 0,
+  countDead: 0,
+};
+
+function normalizeUrlDomain(raw: string): string {
+  return raw
+    .trim()
+    .replace(/^https?:\/\//i, '')
+    .split('/')[0]
+    .split('?')[0]
+    .split('#')[0]
+    .toLowerCase();
+}
+
+async function probeDomain(domainRaw: string, merchantId = ''): Promise<DomainIntelRecord> {
+  const domain = normalizeUrlDomain(domainRaw);
+  const targetUrl = `https://${domain}`;
+  const startTime = Date.now();
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+
+    const response = await fetch(targetUrl, {
+      method: 'GET',
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-AU,en-US;q=0.9,en;q=0.8',
+      },
+      redirect: 'manual',
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+    const responseMs = Date.now() - startTime;
+    const httpStatus = response.status;
+    let finalDomain = domain;
+    const locationHeader = response.headers.get('location');
+
+    if (locationHeader) {
+      try {
+        const resolved = new URL(locationHeader, targetUrl);
+        finalDomain = resolved.hostname;
+      } catch {
+        finalDomain = locationHeader;
+      }
+    }
+
+    const bodyText = await response.text();
+    const htmlSize = bodyText.length;
+
+    let status: DomainIntelRecord['status'] = 'live';
+    let reason = `Online · HTTP ${httpStatus}`;
+
+    // Handle redirects (301, 302, 307, 308)
+    if ([301, 302, 307, 308].includes(httpStatus) || (finalDomain && finalDomain !== domain)) {
+      status = 'redirect';
+      reason = `Redirects to ${finalDomain} (${httpStatus})`;
+    } else if (responseMs > 2000) {
+      status = 'slow';
+      reason = `High latency response (${responseMs}ms)`;
+    } else if (httpStatus === 200) {
+      status = 'live';
+      reason = `Online · 200 OK (${responseMs}ms)`;
+    } else if (httpStatus === 403 || httpStatus === 503) {
+      // Check for Cloudflare / Turnstile bot challenge
+      if (
+        bodyText.includes('cf-ray') ||
+        bodyText.includes('Cloudflare') ||
+        response.headers.get('cf-ray')
+      ) {
+        status = 'live';
+        reason = `Cloudflare protected · HTTP ${httpStatus} (${responseMs}ms)`;
+      } else {
+        status = 'dead';
+        reason = `Access denied · HTTP ${httpStatus}`;
+      }
+    } else if (httpStatus >= 400) {
+      status = 'dead';
+      reason = `Error response · HTTP ${httpStatus}`;
+    }
+
+    const record: DomainIntelRecord = {
+      id: domain,
+      domain,
+      status,
+      httpStatus,
+      responseMs,
+      finalDomain,
+      htmlSize,
+      checkedAt: new Date().toISOString(),
+      reason,
+      merchantId,
+    };
+
+    intelDomains.set(domain, record);
+    return record;
+  } catch (err: any) {
+    const responseMs = Date.now() - startTime;
+    const isTimeout = err?.name === 'AbortError' || err?.message?.includes('aborted');
+    const record: DomainIntelRecord = {
+      id: domain,
+      domain,
+      status: 'dead',
+      httpStatus: null,
+      responseMs: isTimeout ? 6000 : responseMs,
+      finalDomain: domain,
+      htmlSize: 0,
+      checkedAt: new Date().toISOString(),
+      reason: isTimeout ? 'Connection timed out (>6s)' : `Unreachable: ${err?.message || 'Network error'}`,
+      merchantId,
+    };
+    intelDomains.set(domain, record);
+    return record;
+  }
+}
+
+// Background scan worker
+async function runIntelScan() {
+  if (intelScanState.running) return;
+
+  const domainList = Array.from(intelDomains.keys());
+  intelScanState.running = true;
+  intelScanState.total = domainList.length;
+  intelScanState.processed = 0;
+  intelScanState.startedAt = new Date().toISOString();
+
+  // Mark all as checking
+  for (const d of domainList) {
+    const existing = intelDomains.get(d);
+    if (existing) existing.status = 'checking';
+  }
+
+  const poolConcurrency = 6;
+  let idx = 0;
+
+  const worker = async () => {
+    while (idx < domainList.length) {
+      const target = domainList[idx++];
+      if (!target) break;
+      const existing = intelDomains.get(target);
+      await probeDomain(target, existing?.merchantId || '');
+      intelScanState.processed++;
+    }
+  };
+
+  const pool = [];
+  for (let i = 0; i < poolConcurrency; i++) {
+    pool.push(worker());
+  }
+
+  await Promise.all(pool);
+
+  // Recalculate summary metrics
+  const allRecords = Array.from(intelDomains.values());
+  intelScanState.countLive = allRecords.filter((r) => r.status === 'live').length;
+  intelScanState.countRedirect = allRecords.filter((r) => r.status === 'redirect').length;
+  intelScanState.countSlow = allRecords.filter((r) => r.status === 'slow').length;
+  intelScanState.countDead = allRecords.filter((r) => r.status === 'dead').length;
+  intelScanState.running = false;
+  intelScanState.finishedAt = new Date().toISOString();
+}
+
+// Intel API Routes
+app.get('/api/intel/domains', (_req, res) => {
+  const allRecords = Array.from(intelDomains.values());
+  intelScanState.total = allRecords.length;
+  intelScanState.countLive = allRecords.filter((r) => r.status === 'live').length;
+  intelScanState.countRedirect = allRecords.filter((r) => r.status === 'redirect').length;
+  intelScanState.countSlow = allRecords.filter((r) => r.status === 'slow').length;
+  intelScanState.countDead = allRecords.filter((r) => r.status === 'dead').length;
+
+  res.json({
+    domains: allRecords,
+    summary: intelScanState,
+  });
+});
+
+app.post('/api/intel/domains', async (req, res) => {
+  const { domains, merchantId = '' } = req.body;
+  const list: string[] = Array.isArray(domains)
+    ? domains
+    : typeof domains === 'string'
+    ? domains.split(/[\r\n,]+/).map((s) => s.trim()).filter(Boolean)
+    : [];
+
+  const added: DomainIntelRecord[] = [];
+  for (const item of list) {
+    const d = normalizeUrlDomain(item);
+    if (!d || d.length < 3) continue;
+    if (!intelDomains.has(d)) {
+      const newRec: DomainIntelRecord = {
+        id: d,
+        domain: d,
+        status: 'checking',
+        httpStatus: null,
+        responseMs: null,
+        finalDomain: d,
+        htmlSize: null,
+        checkedAt: null,
+        reason: 'Queued for probe',
+        merchantId,
+      };
+      intelDomains.set(d, newRec);
+      added.push(newRec);
+      // Asynchronously probe this domain
+      probeDomain(d, merchantId);
+    }
+  }
+
+  res.json({
+    addedCount: added.length,
+    totalCount: intelDomains.size,
+    domains: added,
+  });
+});
+
+app.delete('/api/intel/domains', (req, res) => {
+  const { domain } = req.body;
+  const normalized = normalizeUrlDomain(domain || '');
+  const existed = intelDomains.delete(normalized);
+  res.json({
+    deleted: existed,
+    domain: normalized,
+    totalCount: intelDomains.size,
+  });
+});
+
+app.post('/api/intel/replace', async (req, res) => {
+  const { oldDomain, newDomain } = req.body;
+  const oldNorm = normalizeUrlDomain(oldDomain || '');
+  const newNorm = normalizeUrlDomain(newDomain || '');
+
+  if (!oldNorm || !newNorm) {
+    return res.status(400).json({ error: 'Both oldDomain and newDomain are required' });
+  }
+
+  const existing = intelDomains.get(oldNorm);
+  intelDomains.delete(oldNorm);
+  const updated = await probeDomain(newNorm, existing?.merchantId || '');
+
+  res.json({
+    oldDomain: oldNorm,
+    newDomain: newNorm,
+    record: updated,
+    totalCount: intelDomains.size,
+  });
+});
+
+app.post('/api/intel/scan', (_req, res) => {
+  runIntelScan();
+  res.json({
+    message: 'Scan triggered',
+    status: intelScanState,
+  });
+});
+
+app.get('/api/intel/status', (_req, res) => {
+  res.json(intelScanState);
+});
+
+app.post('/api/intel/probe-single', async (req, res) => {
+  const { domain } = req.body;
+  if (!domain) {
+    return res.status(400).json({ error: 'Domain is required' });
+  }
+  const existing = intelDomains.get(normalizeUrlDomain(domain));
+  const record = await probeDomain(domain, existing?.merchantId || '');
+  res.json(record);
 });
 
 async function startServer() {

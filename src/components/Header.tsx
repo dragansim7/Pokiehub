@@ -2,6 +2,8 @@ import React from 'react';
 import { KeyRound, Sparkles, Layers, ShieldCheck } from 'lucide-react';
 
 interface HeaderProps {
+  activeView: 'radar' | 'intel';
+  onSelectView: (view: 'radar' | 'intel') => void;
   onOpenVault: () => void;
   onOpenDomains: () => void;
   totalLitUpBonuses: number;
@@ -13,6 +15,8 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({
+  activeView,
+  onSelectView,
   onOpenVault,
   onOpenDomains,
   totalLitUpBonuses,
@@ -36,12 +40,28 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Zone 2: Nav Links */}
           <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-400">
-            <a
-              href="#radar"
-              className="text-white border-b-2 border-cyan-400 pb-0.5 whitespace-nowrap"
+            <button
+              type="button"
+              onClick={() => onSelectView('radar')}
+              className={`transition-colors whitespace-nowrap ${
+                activeView === 'radar'
+                  ? 'text-white border-b-2 border-cyan-400 pb-0.5'
+                  : 'hover:text-slate-200'
+              }`}
             >
               Bonus Radar
-            </a>
+            </button>
+            <button
+              type="button"
+              onClick={() => onSelectView('intel')}
+              className={`transition-colors whitespace-nowrap ${
+                activeView === 'intel'
+                  ? 'text-white border-b-2 border-cyan-400 pb-0.5'
+                  : 'hover:text-slate-200'
+              }`}
+            >
+              Domain Intelligence &amp; Prober
+            </button>
             <button
               type="button"
               onClick={onOpenVault}

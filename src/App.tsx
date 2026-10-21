@@ -5,10 +5,12 @@ import { BonusGrid } from './components/BonusGrid.tsx';
 import { AccountVaultModal } from './components/AccountVaultModal.tsx';
 import { PromotionDetailsModal } from './components/PromotionDetailsModal.tsx';
 import { DomainsCatalogModal } from './components/DomainsCatalogModal.tsx';
+import { DomainIntelView } from './components/DomainIntelView.tsx';
 import { useAccountVault } from './hooks/useAccountVault.ts';
 import { AccountBonusRow, FetchJobSummary } from './types/bonus.ts';
 
 export default function App() {
+  const [activeView, setActiveView] = useState<'radar' | 'intel'>('radar');
   const {
     accounts,
     addAccount,
@@ -304,6 +306,8 @@ export default function App() {
     <div className="min-h-screen bg-[#09090C] text-slate-100 flex flex-col font-sans">
       {/* Top Bar Header & KPI strip */}
       <Header
+        activeView={activeView}
+        onSelectView={setActiveView}
         onOpenVault={() => setIsVaultOpen(true)}
         onOpenDomains={() => setIsDomainsOpen(true)}
         totalLitUpBonuses={kpis.totalLitUpBonuses}
@@ -314,32 +318,41 @@ export default function App() {
         activeAccountsCount={enabledAccounts.length}
       />
 
-      {/* Concurrent Fetch Controls & Progress Bar */}
-      <FetchControlBar
-        isFetching={isFetching}
-        concurrency={concurrency}
-        onConcurrencyChange={setConcurrency}
-        onStartFetch={() => handleStartFetch(false)}
-        onStopFetch={handleStopFetch}
-        onRetryErrors={() => handleStartFetch(true)}
-        onExportCsv={handleExportActiveCsv}
-        progressPct={progressPct}
-        finishedTasks={finishedTasks}
-        totalTasks={totalTasks}
-        activeWorkers={activeWorkers}
-        errorCount={scrapedErrors.length}
-        elapsedSeconds={elapsedSeconds}
-        enabledAccountsCount={enabledAccounts.length}
-      />
+      {activeView === 'radar' ? (
+        <>
+          {/* Concurrent Fetch Controls & Progress Bar */}
+          <FetchControlBar
+            isFetching={isFetching}
+            concurrency={concurrency}
+            onConcurrencyChange={setConcurrency}
+            onStartFetch={() => handleStartFetch(false)}
+            onStopFetch={handleStopFetch}
+            onRetryErrors={() => handleStartFetch(true)}
+            onExportCsv={handleExportActiveCsv}
+            progressPct={progressPct}
+            finishedTasks={finishedTasks}
+            totalTasks={totalTasks}
+            activeWorkers={activeWorkers}
+            errorCount={scrapedErrors.length}
+            elapsedSeconds={elapsedSeconds}
+            enabledAccountsCount={enabledAccounts.length}
+          />
 
-      {/* Main High-Density Data Grid & Radar */}
-      <main className="flex-1 pb-16">
-        <BonusGrid
-          rows={allRowsCombined}
-          isFetching={isFetching}
-          onOpenDetails={(row) => setSelectedRowForDetails(row)}
-        />
-      </main>
+          {/* Main High-Density Data Grid & Radar */}
+          <main className="flex-1 pb-16">
+            <BonusGrid
+              rows={allRowsCombined}
+              isFetching={isFetching}
+              onOpenDetails={(row) => setSelectedRowForDetails(row)}
+            />
+          </main>
+        </>
+      ) : (
+        /* Domain Intelligence & Live URL Prober View */
+        <main className="flex-1 pb-16">
+          <DomainIntelView />
+        </main>
+      )}
 
       {/* Account Vault Modal */}
       <AccountVaultModal

@@ -84,3 +84,29 @@ export interface FetchJobSummary {
   results: AccountBonusRow[];
   errors: AccountBonusRow[];
 }
+
+export interface DomainIntelRecord {
+  id: string;
+  domain: string;
+  status: 'live' | 'redirect' | 'slow' | 'dead' | 'checking';
+  httpStatus: number | null;
+  responseMs: number | null;
+  finalDomain: string;
+  htmlSize: number | null; // in bytes
+  checkedAt: string | null;
+  reason: string;
+  merchantId?: string;
+}
+
+export interface IntelScanSummary {
+  running: boolean;
+  total: number;
+  processed: number;
+  startedAt?: string;
+  finishedAt?: string;
+  countLive: number;
+  countRedirect: number;
+  countSlow: number;
+  countDead: number;
+}
+
